@@ -1,0 +1,34 @@
+# Environment Variables
+backend/.env
+
+# Dependencies
+node_modules/
+backend/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Build outputs
+out/
+dist/
+*.vsix
+
+# IDE
+.vscode-test/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp
+
+# Generated snapshots (optional - remove if you want to track them)
+.godforge/
