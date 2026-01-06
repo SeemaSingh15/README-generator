@@ -68,10 +68,10 @@ class GeminiClient:
             response = self.model.generate_content(
                 prompt,
                 generation_config={
-                    'temperature': 0.3,  # Low temperature for consistency
+                    'temperature': 0.7,
                     'top_p': 0.9,
                     'top_k': 40,
-                    'max_output_tokens': 2048,
+                    'max_output_tokens': 8192,
                 }
             )
             

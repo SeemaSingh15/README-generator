@@ -1,16 +1,11 @@
 import * as vscode from 'vscode';
-import { SidebarProvider } from './ui/SidebarProvider';
+import { ReadmePanel } from './ui/ReadmePanel';
+import { PreviewContentProvider } from './ui/PreviewContentProvider';
 import * as path from 'path';
 import * as fs from 'fs';
 
 /**
  * GodForge README Agent - Extension Entry Point
- * 
- * Philosophy:
- * - Button-based automation ONLY
- * - No chat, no natural language interaction
- * - All actions require explicit user confirmation
- * - Snapshot before every write
  */
 
 export function activate(context: vscode.ExtensionContext) {
@@ -25,23 +20,31 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }
 
-    // Register sidebar provider
-    const sidebarProvider = new SidebarProvider(context.extensionUri);
+    // Register Preview Provider
+    const previewProvider = new PreviewContentProvider();
     context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(
-            'godforge-sidebar',
-            sidebarProvider
+        vscode.workspace.registerTextDocumentContentProvider(
+            'godforge-preview',
+            previewProvider
         )
     );
 
     // Register command to open the panel
     context.subscriptions.push(
         vscode.commands.registerCommand('godforge.openPanel', () => {
-            vscode.commands.executeCommand('godforge-sidebar.focus');
+            ReadmePanel.createOrShow(context.extensionUri, previewProvider, context);
         })
     );
 
-    console.log('GodForge sidebar registered');
+    // Add Status Bar Item
+    const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusBarItem.command = 'godforge.openPanel';
+    statusBarItem.text = '$(book) GodForge';
+    statusBarItem.tooltip = 'Open README Generator';
+    statusBarItem.show();
+    context.subscriptions.push(statusBarItem);
+
+    console.log('GodForge panel registered');
 }
 
 export function deactivate() {

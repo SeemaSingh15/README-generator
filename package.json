@@ -14,24 +14,6 @@
     ],
     "main": "./out/extension.js",
     "contributes": {
-        "viewsContainers": {
-            "activitybar": [
-                {
-                    "id": "godforge-container",
-                    "title": "Documentation",
-                    "icon": "resources/icon.svg"
-                }
-            ]
-        },
-        "views": {
-            "godforge-container": [
-                {
-                    "type": "webview",
-                    "id": "godforge-sidebar",
-                    "name": "📄 Documentation"
-                }
-            ]
-        },
         "commands": [
             {
                 "command": "godforge.openPanel",
@@ -42,12 +24,6 @@
         "configuration": {
             "title": "GodForge README Agent",
             "properties": {
-                "godforge.geminiApiKey": {
-                    "type": "string",
-                    "default": "",
-                    "description": "Google Gemini API Key",
-                    "scope": "machine"
-                },
                 "godforge.readmeLength": {
                     "type": "string",
                     "enum": [

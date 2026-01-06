@@ -1,134 +1,101 @@
 # GodForge - README Generator
 
-VS Code extension that auto-generates professional README files using AI.
+VS Code extension that auto-generates professional README files using AI (Google Gemini).
 
 ---
 
-## What It Does
+## ✨ Features
 
-Analyzes your project structure and generates a comprehensive README.md file using Google Gemini AI.
-
-**Features:**
-- Scans project files and detects tech stack
-- Generates README with proper sections (Features, Setup, Tech Stack, etc.)
-- Preview before saving
-- Auto-backup (undo anytime)
-- Button-based UI (4 buttons: Generate, Preview, Apply, Restore)
+- **Automated Analysis**: Scans project files, dependencies, and scripts.
+- **AI-Powered Generation**: Uses Google Gemini to write professional documentation.
+- **Smart Snapshots**: History-based backup system (undo/restore anytime).
+- **Secure Key Storage**: API keys stored in VS Code's native SecretStorage (never in code).
+- **Panel UI**: Integrated editor panel for better visibility.
+- **One-Click Actions**: Generate, Preview, Apply, Restore.
 
 ---
 
-## Tech Stack
-
-**Frontend:**
-- TypeScript
-- VS Code Extension API
-- React (WebView)
-
-**Backend:**
-- Python 3.10+
-- FastAPI
-- Uvicorn
-- Google Gemini API
-
----
-
-## Architecture
+## 🛠️ Architecture
 
 ```
 VS Code Extension (TypeScript)  ←→  FastAPI Backend (Python)  ←→  Gemini AI
      ↓                                      ↓
-  Sidebar UI                          Prompt Engineering
-  Project Scanner                     Model Discovery
-  Snapshot Manager                    Error Handling
+  Panel UI                            Prompt Engineering
+  Analyzer (fs/path)                  Model Discovery
+  Snapshot System                     Error Handling
+  SecretStorage                       REST API
 ```
 
-**Flow:**
-1. User clicks "Generate" button
-2. Extension scans project files
-3. Sends data to FastAPI backend (localhost:5000)
-4. Backend calls Gemini API with structured prompt
-5. Returns generated README
-6. User previews and applies
+**Workflow:**
+1. User clicks "Generate" button.
+2. Extension scans project (file tree, `package.json`, dependencies).
+3. Securely retrieves API Key from VS Code Secrets.
+4. Sends payload to Python Backend.
+5. Backend constructs high-context prompt and calls Gemini.
+6. Returns Markdown for preview.
 
 ---
 
-## How to Run
+## 🚀 Getting Started
 
-### 1. Install Dependencies
+### 1. Prerequisites
+- **Node.js** (for Extension)
+- **Python 3.10+** (for Backend)
 
+### 2. Install Dependencies
+
+**Frontend (Extension):**
 ```bash
-# Frontend
 npm install
 npm run compile
-
-# Backend
-pip install -r backend/requirements.txt
 ```
 
-### 2. Add API Key
-
-Edit `backend/.env`:
+**Backend (AI Server):**
+```bash
+cd backend
+pip install -r requirements.txt
 ```
-GEMINI_API_KEY=your_key_here
-```
 
-Get free key: https://aistudio.google.com/app/apikey
-
-### 3. Start Backend
-
+### 3. Run the Backend
+Start the local server that handles AI logic:
 ```bash
 python backend/app.py
 ```
+> Keep this terminal open!
 
-Keep this running!
+### 4. Launch Extension
+1. Press `F5` in VS Code to open the Extension Host.
+2. Open any project folder.
+3. Click the **$(book) GodForge** status bar item (bottom right).
+4. Or run command: `GodForge: Open README Generator`.
 
-### 4. Run Extension
-
-Press **F5** in VS Code → New window opens → Open any project → Press `Ctrl+Shift+P` → Type "GodForge"
-
-### 5. Generate README
-
-Click **🚀 Generate** → **👁️ Preview** → **✅ Apply**
+### 5. First Run
+- You will be asked to enter your **Google Gemini API Key**.
+- This is stored securely on your machine.
+- You can reset it anytime via the "Change API Key" button in the panel.
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 ├── src/
-│   ├── extension.ts              # Extension entry
-│   ├── ui/SidebarProvider.ts     # 4-button UI
+/   ├── extension.ts              # Entry & Status Bar
+│   ├── ui/
+│   │   ├── ReadmePanel.ts        # Webview Panel Logic & HTML
+│   │   └── PreviewProvider.ts    # Read-only Preview System
 │   └── services/
-│       ├── analyzer.ts           # Project scanner
-│       ├── snapshot.ts           # Backup system
-│       └── backend-client.ts     # API calls
+│       ├── analyzer.ts           # Codebase Scanning
+│       ├── snapshot.ts           # Backup/Restore Logic
+│       └── backend-client.ts     # Axios Client
 ├── backend/
-│   ├── app.py                    # FastAPI server
-│   ├── docgen_agent.py           # README generation
-│   ├── gemini_client.py          # AI integration
-│   └── .env                      # API key
-├── package.json
-└── tsconfig.json
+│   ├── app.py                    # FastAPI Server
+│   ├── docgen_agent.py           # Prompt Engineering
+│   ├── gemini_client.py          # Gemini Wrapper
+│   └── requirements.txt
+└── package.json
 ```
 
 ---
 
-## Commands Reference
-
-```bash
-# Compile TypeScript
-npm run compile
-
-# Start backend
-python backend/app.py
-
-# Run extension
-Press F5 in VS Code
-
-# View API docs
-http://localhost:5000/docs
-```
-
----
-
-**Final Year Project 2026**
+**GodForge 2026** - *Automating Documentation*

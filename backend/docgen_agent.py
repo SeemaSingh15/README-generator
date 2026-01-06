@@ -20,29 +20,33 @@ load_dotenv()
 
 class DocGenAgent:
     def __init__(self):
-        # Get API key from .env file or environment variable
-        api_key = os.getenv('GEMINI_API_KEY')
-        if not api_key or api_key == '':
-            raise ValueError(
-                "GEMINI_API_KEY not set.\n"
-                "Please edit backend/.env file and add your API key.\n"
-                "Get it from: https://aistudio.google.com/app/apikey"
-            )
-        
-        self.gemini = GeminiClient(api_key)
+        pass
     
-    def generate(self, analysis: dict) -> str:
+    def generate(self, analysis: dict, api_key: str = None) -> str:
         """
         Generate README from project analysis
         
         Args:
             analysis: ProjectAnalysis dict from TypeScript
+            api_key: Gemini API Key provided by user
         
         Returns:
             Markdown string
         """
+        # Fallback to env var if not provided (though frontend should provide it)
+        key_to_use = api_key or os.getenv('GEMINI_API_KEY')
+        
+        if not key_to_use:
+             raise ValueError(
+                "GEMINI_API_KEY not provided.\n"
+                "Please configure it in the VS Code extension."
+            )
+
+        # Initialize client per request with specific key
+        gemini = GeminiClient(key_to_use)
+
         prompt = self._build_prompt(analysis)
-        readme = self.gemini.generate_content(prompt)
+        readme = gemini.generate_content(prompt)
         return readme
     
     def _build_prompt(self, analysis: dict) -> str:
@@ -89,29 +93,34 @@ REQUIREMENTS FOR THE README:
    - Only include technologies you can confirm from the structure
    - Be specific about versions if visible in package files
 
-4. **Getting Started** (🚀 Getting Started)
+4. **Architecture & Design** (🏗️ Architecture)
+   - Describe the high-level architecture (e.g., Client-Server, MVC)
+   - If frontend/backend exists, explain their relationship
+   - Mention key design patterns observed (e.g., Component-based, Service-layer)
+
+5. **Getting Started** (🚀 Getting Started)
    - Include Prerequisites section
    - Provide clear Installation steps
    - Add Running the Application steps
    - If it's a full-stack app, show both frontend and backend setup
 
-5. **Project Structure** (📁 Project Structure)
+6. **Project Structure** (📁 Project Structure)
    - Show a clean tree view of main directories
    - Add brief comments explaining key folders
    - Keep it concise (top-level only)
 
-6. **API Documentation** (📚 API Documentation) - ONLY if backend detected
+7. **API Documentation** (📚 API Documentation) - ONLY if backend detected
    - Mention that API docs are available
    - Suggest where to find endpoint details
 
-7. **Environment Variables** - ONLY if .env files detected
+8. **Environment Variables** - ONLY if .env files detected
    - List required environment variables
    - Provide example values (not real secrets)
 
-8. **Contributing** (🤝 Contributing)
+9. **Contributing** (🤝 Contributing)
    - Brief, welcoming contribution guidelines
 
-9. **License** (📄 License)
+10. **License** (📄 License)
    - Mention license if detected, otherwise use MIT
 
 STYLE GUIDELINES:
@@ -134,6 +143,8 @@ OUTPUT FORMAT:
 Generate ONLY the markdown content. Do not wrap in ```markdown blocks.
 Start directly with the # title.
 
-Generate the README now:"""
+IMPORTANT: You MUST generate the COMPLETE README covering ALL sections from 1 to 10. Do not stop early. Ensure the response is complete.
 
+Generate the README now:"""
+        
         return prompt

@@ -13,8 +13,11 @@ const BACKEND_URL = 'http://localhost:5000';
 const TIMEOUT_MS = 60000; // 60 seconds
 const MAX_RETRIES = 2;
 
-export async function generateReadme(analysis: ProjectAnalysis): Promise<string> {
+export async function generateReadme(analysis: ProjectAnalysis, apiKey: string): Promise<string> {
     let lastError: any;
+
+    // Inject API Key
+    analysis.apiKey = apiKey;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {

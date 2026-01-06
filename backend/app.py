@@ -32,6 +32,10 @@ class ProjectAnalysis(BaseModel):
     frameworks: List[str]
     fileCount: int
     estimatedLOC: int
+    apiKey: str | None = None
+    description: str | None = None
+    dependencies: dict | None = None
+    scripts: dict | None = None
 
 class ReadmeResponse(BaseModel):
     readme: str
@@ -63,7 +67,7 @@ async def generate_readme(analysis: ProjectAnalysis):
         analysis_dict = analysis.model_dump()
         
         # Generate README via agent
-        readme_content = agent.generate(analysis_dict)
+        readme_content = agent.generate(analysis_dict, analysis.apiKey)
         
         print(f"✅ README generated successfully ({len(readme_content)} chars)")
         
