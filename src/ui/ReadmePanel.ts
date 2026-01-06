@@ -45,8 +45,13 @@ export class ReadmePanel {
                     case 'restore':
                         await this.handleRestore();
                         break;
-                    case 'resetKey':
-                        await this.resetApiKey();
+                    case 'saveKey':
+                        if (message.key) {
+                            await this.handleSaveKey(message.key);
+                        }
+                        break;
+                    case 'deleteKey':
+                        await this.handleDeleteKey();
                         break;
                 }
             },
@@ -78,9 +83,6 @@ export class ReadmePanel {
         );
 
         ReadmePanel.currentPanel = new ReadmePanel(panel, extensionUri, previewProvider, context);
-
-        // Proactively check for API key
-        ReadmePanel.currentPanel.getApiKey();
     }
 
     public dispose() {
@@ -97,38 +99,38 @@ export class ReadmePanel {
     }
 
     private async _update() {
-        this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
+        const key = await this._context.secrets.get('godforge.geminiApiKey');
+        const maskedKey = key ? `${key.substring(0, 4)}...${key.substring(key.length - 4)}` : null;
+        this._panel.webview.html = this._getHtmlForWebview(this._panel.webview, !!key, maskedKey);
     }
 
+    // kept for compatibility or internal use if needed, but not forcing prompt anymore in UI flow
     private async getApiKey(forcePrompt: boolean = false): Promise<string | undefined> {
-        // Try to get from secrets
-        let key = await this._context.secrets.get('godforge.geminiApiKey');
-
-        // If not found OR forcePrompt is true
-        if (!key || forcePrompt) {
-            // Note: If forcePrompt is true, we ignore the stored key and ask again
-            // But we can PRE-FILL the input box with the stored key if it exists
-
-            key = await vscode.window.showInputBox({
-                prompt: 'Enter your Google Gemini API Key',
-                password: true,
-                ignoreFocusOut: true,
-                placeHolder: 'AIza...',
-                value: key || '' // Pre-fill if exists
-            });
-
-            if (key) {
-                // Store in secrets
-                await this._context.secrets.store('godforge.geminiApiKey', key);
-            }
-        }
-        return key;
+        return await this._context.secrets.get('godforge.geminiApiKey');
     }
 
-    private async resetApiKey() {
-        await this._context.secrets.delete('godforge.geminiApiKey');
-        vscode.window.showInformationMessage('API Key removed. You will be prompted to enter a new one next time.');
-        this.getApiKey(); // Prompt immediately
+    private async handleSaveKey(key: string) {
+        if (!key.trim()) {
+            vscode.window.showErrorMessage('API Key cannot be empty');
+            return;
+        }
+        await this._context.secrets.store('godforge.geminiApiKey', key.trim());
+        vscode.window.showInformationMessage('API Key saved successfully!');
+        this._update();
+    }
+
+    private async handleDeleteKey() {
+        const confirm = await vscode.window.showWarningMessage(
+            'Are you sure you want to delete your API Key?',
+            { modal: true },
+            'Delete'
+        );
+
+        if (confirm === 'Delete') {
+            await this._context.secrets.delete('godforge.geminiApiKey');
+            vscode.window.showInformationMessage('API Key removed.');
+            this._update();
+        }
     }
 
     private async handleGenerate() {
@@ -138,11 +140,25 @@ export class ReadmePanel {
             return;
         }
 
-        // Step 0: Ensure API Key (Force Prompt)
-        const apiKey = await this.getApiKey(true);
+        // Step 0: Ensure API Key
+        // Step 0: Ensure API Key
+        let apiKey = await this._context.secrets.get('godforge.geminiApiKey');
+
+        // If missing, ask for it immediately
         if (!apiKey) {
-            vscode.window.showWarningMessage('API Key is required to generate README.');
-            return;
+            apiKey = await vscode.window.showInputBox({
+                prompt: 'Enter your Google Gemini API Key to continue',
+                password: true,
+                ignoreFocusOut: true,
+                placeHolder: 'AIza...'
+            });
+
+            if (apiKey && apiKey.trim()) {
+                await this.handleSaveKey(apiKey);
+            } else {
+                vscode.window.showWarningMessage('API Key is required to generate README.');
+                return;
+            }
         }
 
         // STEP 1: Project Analysis (NO LLM)
@@ -156,14 +172,6 @@ export class ReadmePanel {
         // STEP 3-4: Generate via Backend
         this._sendMessage({ type: 'status', message: 'Generating README...' });
         try {
-            // Pass API Key to generate function if needed, or set it in process env/config
-            // Assuming generateReadme uses the key from context or config. 
-            // Since backend-client likely reads from config, we might need to update it to take the key as arg
-            // OR we temporarily set process.env.GEMINI_API_KEY? 
-            // Let's check generateReadme signature later. For now assuming it works or has been updated.
-            // Actually, I need to check `backend-client.ts`. If it reads from VSCode config, I need to change it.
-
-            // For now, I'll pass it if I can, or update generateReadme.
             this._previewContent = await generateReadme(analysis, apiKey);
 
             this._sendMessage({
@@ -171,8 +179,13 @@ export class ReadmePanel {
                 content: this._previewContent
             });
             vscode.window.showInformationMessage('README generated! Click Preview to review.');
-        } catch (error) {
-            vscode.window.showErrorMessage(`Generation failed: ${error}`);
+        } catch (error: any) {
+            const errStr = String(error);
+            if (errStr.includes('400') || errStr.includes('401') || errStr.includes('403') || errStr.toLowerCase().includes('invalid')) {
+                vscode.window.showErrorMessage('Generation Failed: API Key appears to be invalid or expired. Please check your key in the Manage API Keys section.');
+            } else {
+                vscode.window.showErrorMessage(`Generation failed: ${error}`);
+            }
             this._sendMessage({ type: 'error', message: String(error) });
         }
     }
@@ -248,8 +261,6 @@ export class ReadmePanel {
         );
 
         if (confirm === 'Yes') {
-            // New Requirement: Snapshot CURRENT state before restoring old state
-            // "in the history this second readme code should also be saved like a commit of restored ones too"
             this._sendMessage({ type: 'status', message: 'Saving current state before restore...' });
             await createSnapshot(workspaceFolder.uri.fsPath);
 
@@ -263,8 +274,7 @@ export class ReadmePanel {
         this._panel.webview.postMessage(message);
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview) {
-        // Same HTML as SidebarProvider but adjusted if needed
+    private _getHtmlForWebview(webview: vscode.Webview, hasKey: boolean, maskedKey: string | null) {
         return `<!DOCTYPE html>
         <html lang="en">
         <head>
@@ -273,21 +283,60 @@ export class ReadmePanel {
             <title>GodForge</title>
             <style>
                 body {
-                    padding: 20px;
+                    padding: 0;
+                    margin: 0;
                     font-family: var(--vscode-font-family);
                     color: var(--vscode-foreground);
+                    background: var(--vscode-editor-background);
+                }
+                .container {
+                    padding: 20px;
                     max-width: 800px;
                     margin: 0 auto;
                 }
+                h2, h3 { margin-top: 0; }
+                
+                /* Tabs */
+                .tab-bar {
+                    display: flex;
+                    border-bottom: 1px solid var(--vscode-panel-border);
+                    background: var(--vscode-sideBar-background);
+                }
+                .tab {
+                    padding: 10px 15px;
+                    cursor: pointer;
+                    opacity: 0.7;
+                    border-bottom: 2px solid transparent;
+                    font-weight: 600;
+                    font-size: 13px;
+                }
+                .tab:hover {
+                    opacity: 1;
+                    background: var(--vscode-list-hoverBackground);
+                }
+                .tab.active {
+                    opacity: 1;
+                    border-bottom-color: var(--vscode-activityBar-foreground);
+                    color: var(--vscode-foreground);
+                }
+                .tab-content {
+                    display: none;
+                    padding-top: 20px;
+                }
+                .tab-content.active {
+                    display: block;
+                }
+
+                /* Buttons & Inputs */
                 button {
                     width: 100%;
-                    padding: 14px;
+                    padding: 12px;
                     margin: 8px 0;
                     color: white;
                     border: none;
                     border-radius: 6px;
                     cursor: pointer;
-                    font-size: 14px;
+                    font-size: 13px;
                     font-weight: 600;
                     box-shadow: 0 4px 6px rgba(0,0,0,0.2);
                     transition: all 0.2s ease;
@@ -295,14 +344,19 @@ export class ReadmePanel {
                     align-items: center;
                     justify-content: center;
                     gap: 8px;
-                    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
                 }
-                button:hover {
+                button:disabled {
+                    background: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-disabledForeground);
+                    cursor: not-allowed;
+                    box-shadow: none;
+                }
+                button:hover:not(:disabled) {
                     box-shadow: 0 6px 12px rgba(0,0,0,0.4);
                     transform: translateY(-2px);
                     filter: brightness(1.1);
                 }
-                button:active {
+                button:active:not(:disabled) {
                     transform: translateY(0);
                     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
                 }
@@ -321,7 +375,7 @@ export class ReadmePanel {
                 button.secondary {
                     background: transparent;
                     color: var(--vscode-foreground);
-                    border: 1px dashed var(--vscode-button-secondaryBackground);
+                    border: 1px solid var(--vscode-button-secondaryBackground);
                     box-shadow: none;
                 }
                 button.secondary:hover {
@@ -329,12 +383,15 @@ export class ReadmePanel {
                     transform: none;
                     box-shadow: none;
                 }
+                
                 .status {
                     margin: 10px 0;
                     padding: 10px;
                     background: var(--vscode-editor-background);
                     border-radius: 4px;
                     font-size: 12px;
+                    min-height: 20px;
+                    border: 1px solid var(--vscode-panel-border);
                 }
                 .toggle {
                     margin: 15px 0;
@@ -344,46 +401,136 @@ export class ReadmePanel {
                     margin: 8px 0;
                     font-size: 12px;
                 }
-                select {
+                select, input[type="text"], input[type="password"] {
                     width: 100%;
-                    padding: 6px;
+                    padding: 8px;
+                    box-sizing: border-box;
                     background: var(--vscode-input-background);
                     color: var(--vscode-input-foreground);
                     border: 1px solid var(--vscode-input-border);
                     border-radius: 4px;
+                    margin-bottom: 8px;
+                }
+
+                .warning-box {
+                    background-color: var(--vscode-inputValidation-warningBackground);
+                    border: 1px solid var(--vscode-inputValidation-warningBorder);
+                    color: var(--vscode-foreground);
+                    padding: 10px;
+                    border-radius: 4px;
+                    margin-bottom: 15px;
+                    display: ${hasKey ? 'none' : 'block'};
+                }
+                .warning-box strong { color: var(--vscode-inputValidation-warningForeground); }
+                code {
+                    background: var(--vscode-textBlockQuote-background);
+                    padding: 2px 4px;
+                    border-radius: 3px;
                 }
             </style>
         </head>
         <body>
-            <h2>📄 GodForge README Generator</h2>
-            <p>Generate, Preview, and Manage your project documentation.</p>
-            
-            <div class="toggle">
-                <label>
-                    README Length:
-                    <select id="length">
-                        <option value="short">Short</option>
-                        <option value="medium" selected>Medium</option>
-                    </select>
-                </label>
-                <label>
-                    <input type="checkbox" id="badges" checked> Include Badges
-                </label>
+            <div class="tab-bar">
+                <div class="tab active" onclick="showTab('main')">🏠 Generator</div>
+                <div class="tab" onclick="showTab('keys')">🔑 API Keys</div>
+                <div class="tab" onclick="showTab('docs')">📚 Docs</div>
             </div>
 
-            <button class="generate" onclick="generate()">🚀 Generate README</button>
-            <button class="preview" onclick="preview()">👁️ Preview Changes</button>
-            <button class="apply" onclick="apply()">✅ Apply README</button>
-            <button class="destructive" onclick="restore()">↩️ Restore Previous README</button>
+            <div class="container">
+                
+                <!-- MAIN TAB -->
+                <div id="tab-main" class="tab-content active">
+                    <h2>GodForge Generator</h2>
+                    <p>Generate, Preview, and Manage your project documentation.</p>
 
-            <div style="margin-top: 30px; border-top: 1px solid var(--vscode-dropdown-border); padding-top: 10px;">
-                 <button class="secondary" style="font-size: 12px; padding: 8px;" onclick="resetKey()">🔑 Change API Key</button>
+                    <div class="warning-box" id="key-warning">
+                        ⚠️ <strong>Missing API Key:</strong> Please set your Google Gemini API Key in the "API Keys" tab to enable generation.
+                    </div>
+
+                    <div class="toggle">
+                        <label>
+                            README Length:
+                            <select id="length">
+                                <option value="short">Short</option>
+                                <option value="medium" selected>Medium</option>
+                            </select>
+                        </label>
+                        <label>
+                            <input type="checkbox" id="badges" checked> Include Badges
+                        </label>
+                    </div>
+
+                    <button class="generate" onclick="generate()" id="generateBtn">🚀 Generate README</button>
+                    <button class="preview" onclick="preview()">👁️ Preview Changes</button>
+                    <button class="apply" onclick="apply()">✅ Apply README</button>
+                    <button class="destructive" onclick="restore()">↩️ Restore Previous README</button>
+                    
+                    <div class="status" id="status"></div>
+                </div>
+
+                <!-- KEYS TAB -->
+                <div id="tab-keys" class="tab-content">
+                    <h3>🔑 Manage API Keys</h3>
+                    <p>Manage your Google Gemini API Key securely.</p>
+                    
+                    <div id="key-display" style="margin-bottom: 20px; font-size: 13px; padding: 10px; background: var(--vscode-editor-inactiveSelectionBackground); border-radius: 4px;">
+                        ${hasKey ? `
+                            <div style="margin-bottom: 10px;"><strong>Current Key:</strong> <code>${maskedKey}</code></div>
+                            <button class="destructive" style="width: auto; padding: 6px 12px; font-size: 12px;" onclick="deleteKey()">🗑️ Delete Key</button>
+                        ` : '<div><strong>Current Key:</strong> <em>Not Configured</em></div>'}
+                    </div>
+
+                    <div style="margin-top: 20px; border-top: 1px solid var(--vscode-panel-border); padding-top: 20px;">
+                        <label for="apiKeyInput">Add / Replace API Key:</label>
+                        <input type="password" id="apiKeyInput" placeholder="Paste Gemini API Key here (starts with AIza...)">
+                        <button class="secondary" onclick="saveKey()">Save API Key</button>
+                    </div>
+                </div>
+
+                <!-- DOCS TAB -->
+                <div id="tab-docs" class="tab-content">
+                    <h3>📚 Documentation & Help</h3>
+                    <div style="line-height: 1.6; font-size: 13px;">
+                        <p><strong>GodForge</strong> is an advanced agentic coding assistant designed to automate documentation.</p>
+                        
+                        <h4>How to use:</h4>
+                        <ol>
+                            <li><strong>Configure API Key:</strong> Get your Gemini API key from <a href="https://aistudio.google.com/">Google AI Studio</a> and enter it in the "API Keys" tab.</li>
+                            <li><strong>Generate:</strong> Go to the "Generator" tab and click "Generate README". This analyzes your project structure mostly locally.</li>
+                            <li><strong>Preview:</strong> Click "Preview Changes" to see the generated markdown side-by-side.</li>
+                            <li><strong>Apply:</strong> Click "Apply README" to write the file to your disk.</li>
+                        </ol>
+
+                        <h4>Features:</h4>
+                        <ul>
+                            <li><strong>Smart Analysis:</strong> Reads <code>package.json</code> and file structure.</li>
+                            <li><strong>Snapshot Undo:</strong> "Restore Previous" allows you to roll back changes effectively.</li>
+                            <li><strong>Secure:</strong> API keys are stored in VS Code's secure secret storage.</li>
+                        </ul>
+                        
+                        <p><em>Note: This tool uses workflow execution with multiple safety checks, not just raw AI generation.</em></p>
+                    </div>
+                </div>
+
             </div>
-
-            <div class="status" id="status"></div>
 
             <script>
                 const vscode = acquireVsCodeApi();
+
+                function showTab(tabId) {
+                    // Hide all tabs
+                    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+                    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+                    
+                    // Show selected
+                    document.getElementById('tab-' + tabId).classList.add('active');
+                    
+                    // Highlight tab button
+                    const tabs = document.querySelectorAll('.tab');
+                    if (tabId === 'main') tabs[0].classList.add('active');
+                    if (tabId === 'keys') tabs[1].classList.add('active');
+                    if (tabId === 'docs') tabs[2].classList.add('active');
+                }
 
                 function generate() {
                     vscode.postMessage({ type: 'generate' });
@@ -397,8 +544,16 @@ export class ReadmePanel {
                 function restore() {
                     vscode.postMessage({ type: 'restore' });
                 }
-                function resetKey() {
-                    vscode.postMessage({ type: 'resetKey' });
+                function deleteKey() {
+                    vscode.postMessage({ type: 'deleteKey' });
+                }
+                function saveKey() {
+                    const input = document.getElementById('apiKeyInput');
+                    const key = input.value.trim();
+                    if (key) {
+                        vscode.postMessage({ type: 'saveKey', key: key });
+                        input.value = '';
+                    }
                 }
 
                 window.addEventListener('message', event => {
